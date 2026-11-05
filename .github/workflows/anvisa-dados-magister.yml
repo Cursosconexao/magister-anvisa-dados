@@ -1,0 +1,69 @@
+# Publica todo dia a base ANVISA de materiais (produtos para saúde) para a página de materiais do Magister.
+# O site fica em https://cursosconexao.github.io/magister-anvisa-dados/ (GitHub Pages, sem senhas nem tokens).
+# Cada execução também guarda em historico/ o resumo das mudanças do dia (novos, alterados, removidos).
+
+name: Base ANVISA para o Magister
+
+on:
+  schedule:
+    - cron: "40 10 * * *"   # todo dia às 07:40 (Brasília)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: anvisa-dados-magister
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      ANVISA_SITE: https://cursosconexao.github.io/magister-anvisa-dados
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Gerar arquivos da base ANVISA
+        run: python anvisa_dados.py --saida publicar
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: publicar
+
+      - name: Publicar no GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Guardar o resumo do dia no histórico
+        run: |
+          mkdir -p historico
+          cp publicar/mudancas.json "historico/$(date -u +%F).json"
+          python - <<'EOF'
+          import json, os
+          m = json.load(open("publicar/mudancas.json"))
+          meta = json.load(open("publicar/meta.json"))
+          linhas = [f"### Base ANVISA publicada em {meta['gerado']}",
+                    f"- Registros regularizados: {meta['ativos']:,}",
+                    f"- Fora da base (vencidos/cancelados): {meta['fora']:,}",
+                    f"- Hoje: {len(m['novos'])} novos, {len(m['alterados'])} alterados, "
+                    f"{len(m['removidos'])} removidos, {len(m['voltaram'])} voltaram"]
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a").write("\n".join(linhas) + "\n")
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add historico
+          git commit -m "Base ANVISA $(date -u +%F)" || echo "sem mudanças"
+          git push
