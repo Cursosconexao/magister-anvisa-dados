@@ -173,6 +173,28 @@ def gravar(saida_dir, regs, mud, data_base, hoje):
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
     with open(os.path.join(saida_dir, "mudancas.json"), "w", encoding="utf-8") as f:
         json.dump(mud, f, ensure_ascii=False, separators=(",", ":"))
+    # índice leve para a lista de materiais: registro -> "V" (vigente), "AAAA-MM-DD" (válido até),
+    # "F" + data (saiu da base: vencido/cancelado) ou "?" (sem validade informada)
+    status = {}
+    for k in chaves:
+        r = regs[k]
+        if r.get("fora"):
+            status[k] = "F" + r["fora"]
+        elif r.get("val") == "VIGENTE":
+            status[k] = "V"
+        elif len(r.get("val") or "") == 10:
+            status[k] = r["val"]
+        else:
+            status[k] = "?"
+    with open(os.path.join(saida_dir, "status.json"), "w", encoding="utf-8") as f:
+        json.dump(status, f, separators=(",", ":"))
+    # arquivos fixos do repositório (ex.: lista de códigos com referência de valor ANS)
+    estatico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estatico")
+    if os.path.isdir(estatico):
+        for nome in os.listdir(estatico):
+            origem = os.path.join(estatico, nome)
+            if os.path.isfile(origem):
+                shutil.copy2(origem, os.path.join(saida_dir, nome))
     with open(os.path.join(saida_dir, "_headers"), "w", encoding="utf-8") as f:
         f.write("/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=1800\n")
     with open(os.path.join(saida_dir, "index.html"), "w", encoding="utf-8") as f:
