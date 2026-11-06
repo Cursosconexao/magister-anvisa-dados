@@ -188,6 +188,25 @@ def gravar(saida_dir, regs, mud, data_base, hoje):
             status[k] = "?"
     with open(os.path.join(saida_dir, "status.json"), "w", encoding="utf-8") as f:
         json.dump(status, f, separators=(",", ":"))
+    # registros da base ANVISA que não têm código na Tabela 19 da TUSS (lista em referencia/registros-t19.txt)
+    ref = os.path.join(os.path.dirname(os.path.abspath(__file__)), "referencia", "registros-t19.txt")
+    if os.path.isfile(ref):
+        com_tuss = set(l.strip() for l in open(ref, encoding="utf-8") if l.strip())
+        linhas = []
+        for k in chaves:
+            if k in com_tuss:
+                continue
+            r = regs[k]
+            fabs = []
+            for par in r.get("fab") or []:
+                if par[0] and par[0] not in fabs:
+                    fabs.append(par[0])
+            fab = " / ".join(fabs[:3])
+            linhas.append([k, r.get("nt", ""), r.get("nc", ""), r.get("det", ""), "" if fab == r.get("det", "") else fab])
+        with open(os.path.join(saida_dir, "semtuss.json"), "w", encoding="utf-8") as f:
+            json.dump({"gerado": hoje, "cols": ["reg", "nt", "nc", "det", "fab"], "rows": linhas},
+                      f, ensure_ascii=False, separators=(",", ":"))
+        print(f"Sem código TUSS: {len(linhas):,} registros.")
     # arquivos fixos do repositório (ex.: lista de códigos com referência de valor ANS)
     estatico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estatico")
     if os.path.isdir(estatico):
