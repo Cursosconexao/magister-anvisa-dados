@@ -1,4 +1,5 @@
-# Publica todo dia a base ANVISA de materiais (produtos para saúde) para a página de materiais do Magister.
+# Publica todo dia a base ANVISA de materiais (produtos para saúde) para a página de materiais do Magister
+# e, desde 18/11/2026, a base de medicamentos (ANVISA + lista CMED) para a página "Medicamentos TUSS".
 # O site fica em https://cursosconexao.github.io/magister-anvisa-dados/ (GitHub Pages, sem senhas nem tokens).
 # Cada execução também guarda em historico/ o resumo das mudanças do dia (novos, alterados, removidos).
 
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   publicar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -36,6 +37,12 @@ jobs:
 
       - name: Gerar arquivos da base ANVISA
         run: python anvisa_dados.py --saida publicar
+
+      # Medicamentos: se a ANVISA ou a CMED estiverem fora do ar, o script reaproveita
+      # os arquivos do dia anterior e a publicação dos materiais segue normalmente.
+      - name: Gerar arquivos de medicamentos (ANVISA + CMED)
+        continue-on-error: true
+        run: python medicamentos_dados.py --saida publicar
 
       - uses: actions/configure-pages@v5
 
@@ -60,6 +67,11 @@ jobs:
                     f"- Fora da base (vencidos/cancelados): {meta['fora']:,}",
                     f"- Hoje: {len(m['novos'])} novos, {len(m['alterados'])} alterados, "
                     f"{len(m['removidos'])} removidos, {len(m['voltaram'])} voltaram"]
+          if os.path.exists("publicar/med/meta.json"):
+              md = json.load(open("publicar/med/meta.json"))
+              linhas.append(f"- Medicamentos: {md.get('anvisa_registros', 0):,} registros ANVISA, "
+                            f"lista CMED de {md.get('cmed_publicada', '?')} "
+                            f"({md.get('tuss_com_cmed', 0):,} apresentações da TUSS 20 com CMED)")
           open(os.environ["GITHUB_STEP_SUMMARY"], "a").write("\n".join(linhas) + "\n")
           EOF
           git config user.name "github-actions[bot]"
