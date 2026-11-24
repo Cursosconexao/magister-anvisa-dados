@@ -119,14 +119,16 @@ function negSalvar(nome, substituir){
     NEG.pendenteNome = nome; S.nome = nome; salvar();
     window.bubble_fn_ambnegsalvar(JSON.stringify(dados));
     if (antigo && temBubble("ambnegexcluir")) setTimeout(function(){ window.bubble_fn_ambnegexcluir(antigo); }, 600);
+    negRecarregar(1500);
   } else {
     var l = negListaLocal().filter(function(x){ return x.id!==antigo; });
     var id = "l"+Date.now(); l.push({id:id, d:dados}); negGravaLocal(l);
     NEG.lista = l; NEG.atual = id; S.nome = nome; S._id = id; salvar(); desenhaNeg();
   }
 }
+function negRecarregar(ms){ if (temBubble("ambneglistar")) setTimeout(function(){ window.bubble_fn_ambneglistar(String(Date.now())); }, ms||0); }
 function negExcluir(id){
-  if (temBubble("ambnegexcluir")) window.bubble_fn_ambnegexcluir(id);
+  if (temBubble("ambnegexcluir")) { window.bubble_fn_ambnegexcluir(id); NEG.lista = NEG.lista.filter(function(x){ return x.id!==id; }); negRecarregar(1200); }
   else { var l = negListaLocal().filter(function(x){ return x.id!==id; }); negGravaLocal(l); NEG.lista=l; }
   if (NEG.atual===id){ NEG.atual=null; S.nome=""; delete S._id; salvar(); }
   desenhaNeg();
@@ -204,7 +206,7 @@ function telaBase(){
   if (!dep) telaNeg();
   trocaAba();
   if (!dep) {
-    if (temBubble("ambneglistar")) window.bubble_fn_ambneglistar("1");
+    if (temBubble("ambneglistar")) negRecarregar(0);
     else if (window.MGAMB_NEG) window.MagisterAMB.negociacoes(window.MGAMB_NEG);
     else { NEG.lista = negListaLocal(); desenhaNeg(); }
   }
