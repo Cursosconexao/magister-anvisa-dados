@@ -5,6 +5,7 @@ var CFG = Object.assign({
   acesso: "ACESSO",
   modo: "calculo",
   dados: "https://cursosconexao.github.io/magister-anvisa-dados/amb/",
+  tuss: "https://magister-tuss-dados.pages.dev/tuss-22.json",
   planos: "LINK_ASSINATURA"
 }, window.MAGISTER_AMB_CONFIG || {});
 var T = ["AMB90","AMB92","AMB96","AMB99","CIEFAS"];
@@ -54,7 +55,7 @@ if (["sim","yes","true","assinante","administrador","admin"].indexOf(String(CFG.
 }
 
 /* ---------- dados ---------- */
-var DB = {tab:{}, codigos:{}, lista:[], tuss:{}, tussLista:[], ambTuss:{}, depara:null};
+var DB = {tab:{}, codigos:{}, lista:[], tuss:{}, tussLista:[], ambTuss:{}, depara:null, grupo:{}, t22:null};
 function montar(meta, itens, depara){
   DB.meta = meta;
   meta.tabelas.forEach(function(m){ DB.tab[m.id] = {moeda:m.moeda, portes:m.portes, map:{}, n:0}; });
@@ -73,6 +74,7 @@ function montar(meta, itens, depara){
   DB.lista.sort(function(a,b){ return a.c<b.c?-1:1; });
   if (depara && depara.pares) {
     DB.depara = depara;
+    DB.grupo = depara.grupos || {};
     depara.pares.forEach(function(p){
       var a=p[0], t=p[1], d=p[2]||"";
       var k = DB.tuss[t]; if(!k){ k = DB.tuss[t] = {tipo:"TUSS", c:t, d:d, amb:[], txt:""}; DB.tussLista.push(k); }
@@ -94,6 +96,20 @@ function carregar(){
   });
 }
 function tussDe(amb){ return DB.ambTuss[amb] || []; }
+function grupoDe(amb){ return DB.grupo[amb] || ""; }
+function aplicaT22(j){
+  var cols = (j.cols||[]).map(function(c){ return c.k; }), ic = cols.indexOf("codigo"), it = cols.indexOf("termo"), is = cols.indexOf("situacao"), ii = cols.indexOf("inativado_em");
+  if (ic<0 || it<0) return;
+  DB.t22 = {versao:j.versao||"", n:0};
+  (j.rows||[]).forEach(function(r){ var k = DB.tuss[r[ic]]; if(!k) return; k.d = r[it]; k.sit = is>=0 ? r[is] : ""; k.inat = ii>=0 ? r[ii] : ""; DB.t22.n++; });
+  DB.tussLista.forEach(function(k){ k.txt = norm(k.d) + " " + k.amb.map(function(a){ return DB.codigos[a]?DB.codigos[a].txt:""; }).join(" "); });
+}
+function carregaT22(){
+  if (!DB.depara || !CFG.tuss || window.MGAMB_T22 === false) return;
+  if (window.MGAMB_T22) { aplicaT22(window.MGAMB_T22); return; }
+  fetch(CFG.tuss, {cache:"default"}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(j){ aplicaT22(j); if ($("#mg-corpo")) trocaAba(); }).catch(function(){});
+}
+function inativoTuss(t){ var k=DB.tuss[t]; return !!(k && (k.inat || /inativ/i.test(k.sit||""))); }
 function descTuss(t){ var k=DB.tuss[t]; return k ? (k.d || k.dAmb || "") : ""; }
 
 /* ---------- negociação ---------- */
@@ -394,7 +410,7 @@ function resCalc(){
   var h = "";
   if (CALC.tuss) {
     var kt = DB.tuss[CALC.tuss];
-    h += '<div class="sep"></div><div class="linha-bt"><span class="tag t">TUSS</span><b>'+kt.c+'</b> <span>'+esc(kt.d||kt.dAmb||"")+'</span></div>';
+    h += '<div class="sep"></div><div class="linha-bt"><span class="tag t">TUSS</span><b>'+kt.c+'</b> <span>'+esc(kt.d||kt.dAmb||"")+'</span>'+(inativoTuss(kt.c)?'<span class="pilula al">Inativo na TUSS'+(kt.inat?' desde '+esc(kt.inat):'')+'</span>':'')+'</div>';
     if (kt.amb.length>1) h += '<p class="mut peq" style="margin-top:6px">Este TUSS corresponde a '+kt.amb.length+' códigos AMB. Escolha o que foi realizado:</p>';
     h += cardsTuss(CALC.tuss, CALC.c);
     if (!CALC.c){ el.innerHTML = h; ligaCards(); return; }
@@ -402,8 +418,8 @@ function resCalc(){
   var k = DB.codigos[CALC.c], ach = achar(CALC.c, S, CALC.t);
   var chips = T.map(function(t){ var tem = !!(DB.tab[t] && DB.tab[t].map[CALC.c]); return '<button class="chip'+(ach&&ach.t===t?" on":"")+'" data-t="'+t+'"'+(tem?"":" disabled")+'>'+NOME[t]+'</button>'; }).join("");
   var tu = tussDe(CALC.c);
-  h += '<div class="sep"></div><div class="linha-bt entre" style="align-items:flex-start"><div style="min-width:0"><div class="peq mut"><span class="tag a">AMB</span>'+fcod(CALC.c)+'</div><div style="font-weight:600;font-size:16px">'+esc(k.d)+'</div>'+
-    (DB.depara ? '<div class="linha-bt" style="margin-top:6px;gap:6px">'+(tu.length ? tu.map(function(t){ return '<button class="pilula tuss" data-tuss="'+t+'" style="cursor:pointer" title="'+esc(descTuss(t))+'">TUSS '+t+(DB.tuss[t].amb.length>1?' · 1×'+DB.tuss[t].amb.length:'')+'</button>'; }).join("") : '<span class="pilula al">Sem TUSS no de-para</span>')+'</div>' : '')+
+  h += '<div class="sep"></div><div class="linha-bt entre" style="align-items:flex-start"><div style="min-width:0"><div class="peq mut"><span class="tag a">AMB</span>'+fcod(CALC.c)+(grupoDe(CALC.c)?' · '+esc(grupoDe(CALC.c)):'')+'</div><div style="font-weight:600;font-size:16px">'+esc(k.d)+'</div>'+
+    (DB.depara ? '<div class="linha-bt" style="margin-top:6px;gap:6px">'+(tu.length ? tu.map(function(t){ return '<button class="pilula tuss" data-tuss="'+t+'" style="cursor:pointer;text-align:left" title="'+esc(descTuss(t))+'">TUSS '+t+(DB.tuss[t].amb.length>1?' · 1×'+DB.tuss[t].amb.length:'')+(inativoTuss(t)?' · inativo':'')+(DB.t22&&descTuss(t)?' · '+esc(descTuss(t).length>70?descTuss(t).slice(0,70)+'…':descTuss(t)):'')+'</button>'; }).join("") : '<span class="pilula al">Sem TUSS no de-para</span>')+'</div>' : '')+
     '</div><div class="chips">'+chips+'</div></div>';
   if (!ach){
     h += '<div class="aviso al">Este código não está na '+esc(cadeia(S).map(function(t){return NOME[t];}).join(", "))+'. Ele existe em: '+k.tabs.map(function(t){return NOME[t];}).join(", ")+'. Escolha uma tabela acima ou ajuste a subsequência nos parâmetros.</div>';
@@ -458,10 +474,10 @@ var ANE = {tab:"Conforme tabela", sem:"Chamado sem previsão", nao:"Não partici
 function porteSemPrev(t){ return t==="AMB90" ? 1 : 3; }
 function addConta(r, tuss){
   var temPrinc = CONTA.itens.some(function(i){ return i.via==="principal"; });
-  var exame = capIII(r.c) || r.co>0 || r.fm>0;
+  var g = grupoDe(r.c), exame = g ? (g==="SADT") : (capIII(r.c) || r.co>0 || r.fm>0);
   if (!tuss){ var tu=tussDe(r.c); if(tu.length===1) tuss=tu[0]; }
   CONTA.itens.push({id:++CONTA.seq, c:r.c, t:r.t, tuss:tuss||null, rowi:Math.max(0,(DB.tab[r.t].map[r.c]||[]).indexOf(r)), qtd:1,
-    via: exame ? "na" : (temPrinc ? "mesma" : "principal"), esc: tipoExame(r), ane:"tab", acr: !capIII(r.c)});
+    via: exame ? "na" : (temPrinc ? "mesma" : "principal"), esc: tipoExame(r), ane:"tab", acr: g ? (g!=="SADT") : !capIII(r.c)});
 }
 function addContaCod(c, tuss){ var a = achar(c, S); if(!a){ var k=DB.codigos[c]; if(!k) return; a={rows:DB.tab[k.tabs[0]].map[c]}; } addConta(a.rows[0], tuss); }
 function rowDe(it){ var a = DB.tab[it.t].map[it.c]; return a[Math.min(it.rowi,a.length-1)]; }
@@ -615,9 +631,9 @@ function desenhaConta(){
   var memoTxt = res.map(function(x){return x.memo;}).join("\n\n")+"\n\nTotal da conta: "+brl(tot.tot);
   $("#mg-kcop").addEventListener("click", function(){ copiar(memoTxt, this); });
   $("#mg-kcsv").addEventListener("click", function(){
-    var L=[["TUSS","Código AMB","Descrição","Tabela","Quantidade","Via de acesso","Escalonamento","Cirurgião","1º auxiliar","2º auxiliar","3º auxiliar","4º auxiliar","Anestesista","Custo operacional","Filme","Instrumentador","Total"]];
-    res.forEach(function(x){ L.push([x.it.tuss||tussDe(x.r.c).join(" | "),fcod(x.r.c),x.r.d,NOME[x.r.t],nf(num(x.it.qtd)),VIA[x.it.via][0],ESC[x.it.esc][0],cn(x.cir),cn(x.aux[0]),cn(x.aux[1]),cn(x.aux[2]),cn(x.aux[3]),cn(x.an),cn(x.co),cn(x.fil),cn(x.ins),cn(x.tot)]); });
-    L.push(["Total","","","","","","",cn(tot.cir),cn(tot.aux[0]),cn(tot.aux[1]),cn(tot.aux[2]),cn(tot.aux[3]),cn(tot.an),cn(tot.co),cn(tot.fil),cn(tot.ins),cn(tot.tot)]);
+    var L=[["TUSS","Descrição TUSS","Código AMB","Descrição AMB","Tabela","Quantidade","Via de acesso","Escalonamento","Cirurgião","1º auxiliar","2º auxiliar","3º auxiliar","4º auxiliar","Anestesista","Custo operacional","Filme","Instrumentador","Total"]];
+    res.forEach(function(x){ var tt = x.it.tuss ? [x.it.tuss] : tussDe(x.r.c); L.push([tt.join(" | "),tt.map(descTuss).filter(Boolean).join(" | "),fcod(x.r.c),x.r.d,NOME[x.r.t],nf(num(x.it.qtd)),VIA[x.it.via][0],ESC[x.it.esc][0],cn(x.cir),cn(x.aux[0]),cn(x.aux[1]),cn(x.aux[2]),cn(x.aux[3]),cn(x.an),cn(x.co),cn(x.fil),cn(x.ins),cn(x.tot)]); });
+    L.push(["Total","","","","","","","",cn(tot.cir),cn(tot.aux[0]),cn(tot.aux[1]),cn(tot.aux[2]),cn(tot.aux[3]),cn(tot.an),cn(tot.co),cn(tot.fil),cn(tot.ins),cn(tot.tot)]);
     baixarCSV("conta_amb.csv", L);
   });
 }
@@ -713,14 +729,14 @@ function desenhaImp(){
   }
   $("#mg-ifil").addEventListener("input", function(){ IMP.filtro=this.value; lista(); });
   $("#mg-icsv").addEventListener("click", function(){
-    var cab=["TUSS","Código AMB","Descrição","Quantidade"];
+    var cab=["TUSS","Descrição TUSS","Código AMB","Descrição AMB","Grupo","Quantidade"];
     ["A","B"].forEach(function(s){ cab=cab.concat(["Tabela "+s,"Honorário "+s,"Custo op. "+s,"Filme "+s,"1º auxiliar "+s,"2º auxiliar "+s,"3º auxiliar "+s,"4º auxiliar "+s,"Anestesista "+s,"Unitário "+s,"Total "+s]); });
     cab.push("Diferença");
     var L=[cab];
-    R.lin.forEach(function(x){ var l=[x.tuss,fcod(x.c),x.d,cn(x.q)];
+    R.lin.forEach(function(x){ var l=[x.tuss,String(x.tuss).split(" | ").map(descTuss).filter(Boolean).join(" | "),fcod(x.c),x.d,grupoDe(x.c),cn(x.q)];
       [["A",x.A,x.va],["B",x.B,x.vb]].forEach(function(o){ var op=o[1]; if(!op){ l=l.concat(["","","","","","","","","","",""]); return; } var v=op.k.v, inc=IMP.completo; l=l.concat([NOME[op.t],cn(v.hm),cn(v.co),cn(v.fil),inc?cn(v.aux[0]):"",inc?cn(v.aux[1]):"",inc?cn(v.aux[2]):"",inc?cn(v.aux[3]):"",inc?cn(v.an):"",cn(op.k.u),cn(o[2])]); });
       l.push(cn(x.vb-x.va)); L.push(l); });
-    R.nf.forEach(function(x){ L.push([x[2]?x[0]:"",x[2]?"":x[0],"sem correspondência",cn(x[1])]); });
+    R.nf.forEach(function(x){ L.push([x[2]?x[0]:"",x[2]?descTuss(x[0]):"",x[2]?"":x[0],"sem correspondência","",cn(x[1])]); });
     baixarCSV("impacto_amb.csv", L);
   });
   lista();
@@ -732,13 +748,13 @@ function telaDepara(){
   var c = $("#mg-corpo");
   if (!DB.depara){ c.innerHTML = '<div class="card"><h3>De-para TUSS × AMB</h3><div class="aviso al">O de-para ainda não foi carregado na base. Assim que for publicado, a pesquisa por TUSS fica disponível aqui e nas outras abas.</div></div>'; return; }
   var n1n = DB.tussLista.filter(function(k){return k.amb.length>1;}).length, namb = Object.keys(DB.ambTuss).length;
-  c.innerHTML = '<div class="card"><h3>De-para TUSS × AMB</h3><p class="mut">Pesquise pelo código TUSS ou AMB, ou por parte da descrição. Base: '+DB.depara.pares.length.toLocaleString("pt-BR")+' pares, '+DB.tussLista.length.toLocaleString("pt-BR")+' códigos TUSS ('+n1n.toLocaleString("pt-BR")+' com mais de um AMB) e '+namb.toLocaleString("pt-BR")+' códigos AMB.</p>'+
+  c.innerHTML = '<div class="card"><h3>De-para TUSS × AMB</h3><p class="mut">Pesquise pelo código TUSS ou AMB, ou por parte da descrição. Base: '+DB.depara.pares.length.toLocaleString("pt-BR")+' pares, '+DB.tussLista.length.toLocaleString("pt-BR")+' códigos TUSS ('+n1n.toLocaleString("pt-BR")+' com mais de um AMB) e '+namb.toLocaleString("pt-BR")+' códigos AMB'+(DB.depara.fonte?' · fonte: '+esc(DB.depara.fonte):'')+(DB.t22?' · descrições da TUSS '+esc(DB.t22.versao):'')+'.</p>'+
     '<div class="linha-bt"><input type="text" id="mg-dq" placeholder="Código TUSS, código AMB ou descrição" value="'+esc(DP.q)+'" style="flex:1 1 280px;width:auto"><button class="bt cont" id="mg-dcsv">Baixar de-para completo (CSV)</button></div><div id="mg-dres" style="margin-top:12px"></div></div>';
   var tm;
   $("#mg-dq").addEventListener("input", function(){ DP.q=this.value; clearTimeout(tm); tm=setTimeout(resDepara,150); });
   $("#mg-dcsv").addEventListener("click", function(){
-    var L=[["TUSS","Descrição TUSS","Código AMB","Descrição AMB","Tabelas AMB","Relação"]];
-    DB.depara.pares.forEach(function(p){ var k=DB.codigos[p[0]], kt=DB.tuss[p[1]]; L.push([p[1],p[2]||"",fcod(p[0]),k?k.d:"não encontrado nas tabelas",k?k.tabs.map(function(t){return NOME[t];}).join(", "):"",(kt.amb.length>1?"1×"+kt.amb.length:"1×1")+(tussDe(p[0]).length>1?" (AMB com "+tussDe(p[0]).length+" TUSS)":"")]); });
+    var L=[["TUSS","Descrição TUSS","Situação TUSS","Código AMB","Descrição AMB","Grupo","Tabelas AMB","Relação"]];
+    DB.depara.pares.forEach(function(p){ var k=DB.codigos[p[0]], kt=DB.tuss[p[1]]; L.push([p[1],kt.d||p[2]||"",inativoTuss(p[1])?"Inativo":(DB.t22?"Ativo":""),fcod(p[0]),k?k.d:"não encontrado nas tabelas",grupoDe(p[0]),k?k.tabs.map(function(t){return NOME[t];}).join(", "):"",(kt.amb.length>1?"1×"+kt.amb.length:"1×1")+(tussDe(p[0]).length>1?" (AMB com "+tussDe(p[0]).length+" TUSS)":"")]); });
     baixarCSV("depara_tuss_amb.csv", L);
   });
   resDepara();
@@ -753,9 +769,9 @@ function resDepara(){
     lista.forEach(function(p){ var key=p[0]+"|"+p[1]; if(!visto[key]){ visto[key]=1; pares.push(p); } });
   });
   if (!pares.length){ el.innerHTML = '<div class="vazio">Nenhuma correlação encontrada.</div>'; return; }
-  el.innerHTML = tabela([{t:"TUSS",prim:true},{t:"Descrição TUSS",opc:true},{t:"AMB"},{t:"Descrição AMB"},{t:"Tabelas"},{t:"Relação",opc:true},{t:"",opc:true}],
+  el.innerHTML = tabela([{t:"TUSS",prim:true},{t:"Descrição TUSS",opc:true},{t:"AMB"},{t:"Descrição AMB"},{t:"Grupo",opc:true},{t:"Tabelas"},{t:"Relação",opc:true},{t:"",opc:true}],
     pares.slice(0,200).map(function(p){ var k=DB.codigos[p[0]], kt=p[1]?DB.tuss[p[1]]:null;
-      return {c:[p[1]?'<b>'+p[1]+'</b>':'<span class="pilula al">sem TUSS</span>', kt&&kt.d?esc(kt.d):null, '<b>'+fcod(p[0])+'</b>', k?esc(k.d):'<span class="mut">não está nas tabelas AMB</span>', k?k.tabs.map(function(t){return NOME[t];}).join(", "):null, kt?(kt.amb.length>1?'<span class="pilula al">1×'+kt.amb.length+'</span>':'1×1'):null, (k && CFG.modo!=="depara")?'<button class="bt leve min" data-calc="'+p[0]+'" data-t="'+(p[1]||"")+'">Calcular</button>':null]}; }))+
+      return {c:[p[1]?'<b>'+p[1]+'</b>'+(inativoTuss(p[1])?' <span class="pilula al">inativo</span>':''):'<span class="pilula al">sem TUSS</span>', kt&&kt.d?esc(kt.d):null, '<b>'+fcod(p[0])+'</b>', k?esc(k.d):'<span class="mut">não está nas tabelas AMB</span>', grupoDe(p[0])?esc(grupoDe(p[0])):null, k?k.tabs.map(function(t){return NOME[t];}).join(", "):null, kt?(kt.amb.length>1?'<span class="pilula al">1×'+kt.amb.length+'</span>':'1×1'):null, (k && CFG.modo!=="depara")?'<button class="bt leve min" data-calc="'+p[0]+'" data-t="'+(p[1]||"")+'">Calcular</button>':null]}; }))+
     (pares.length>200?'<p class="mut peq">Mostrando 200 de '+pares.length+'. Refine a pesquisa.</p>':'');
   $$("[data-calc]",el).forEach(function(b){ b.addEventListener("click", function(){ CALC={c:b.getAttribute("data-calc"), t:null, v:0, tuss:b.getAttribute("data-t")||null}; ABA="calc"; trocaAba(); }); });
 }
@@ -785,7 +801,7 @@ function telaComo(){
 }
 
 /* ---------- início ---------- */
-carregar().then(telaBase).catch(function(e){
+carregar().then(function(){ telaBase(); carregaT22(); }).catch(function(e){
   root.innerHTML = '<div class="card"><div class="aviso er">Não foi possível carregar as tabelas AMB ('+esc(e.message)+'). Atualize a página; se continuar, avise o suporte Magister.</div></div>';
 });
 })();

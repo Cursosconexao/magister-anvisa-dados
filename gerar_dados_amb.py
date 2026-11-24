@@ -1,7 +1,7 @@
 """Gera os dados da aba Cálculo AMB (Magister).
 
 Uso:
-    python3 gerar_dados_amb.py CALCULO_AMB.xlsx PASTA_SAIDA [--depara DEPARA.xlsx|.csv]
+    python3 gerar_dados_amb.py CALCULO_AMB.xlsx PASTA_SAIDA [--depara DEPARA.xlsx|.csv] [--aba AMB]
 
 PASTA_SAIDA recebe a pasta amb/ (meta.json, AMB90.json ... CIEFAS.json e, se informado, depara.json).
 No repositório magister-anvisa-dados a saída é estatico/  ->  publicado em
@@ -12,6 +12,8 @@ O de-para pode ser .xlsx ou .csv (; ou ,). O script procura as colunas pelo nome
   - código TUSS: cabeçalho com "TUSS" (e "COD")
   - descrição TUSS (opcional): cabeçalho com "DESCR" e "TUSS" (ou "TERMO")
 Cada linha é um par; 1×n e n×1 são aceitos (várias linhas com o mesmo código).
+  - grupo (opcional): cabeçalho "GRUPO" (CIRÚRGICO, SADT, CLINICO, CONSULTAS/VISITAS)
+Com --aba lê só essa aba (ex.: aba AMB da planilha CALCULO_CBHPM_ABRAAO, código na coluna B e TUSS na O).
 """
 import csv
 import datetime
@@ -71,10 +73,10 @@ def ler_tabelas(xlsx):
     return portes, moeda, itens
 
 
-def ler_linhas(arq):
+def ler_linhas(arq, aba=None):
     if arq.lower().endswith((".xlsx", ".xlsm")):
         wb = openpyxl.load_workbook(arq, data_only=True, read_only=True)
-        for ws in wb.worksheets:
+        for ws in ([wb[aba]] if aba else wb.worksheets):
             for r in ws.iter_rows(values_only=True):
                 yield list(r)
         return
@@ -86,9 +88,10 @@ def ler_linhas(arq):
             yield r
 
 
-def ler_depara(arq):
-    pares, cab = [], None
-    for r in ler_linhas(arq):
+def ler_depara(arq, aba=None):
+    pares, cab, grupos = [], None, {}
+    i_g = None
+    for r in ler_linhas(arq, aba):
         nomes = [sem_acento(x) for x in r]
         if cab is None:
             i_t = next((i for i, n in enumerate(nomes) if "TUSS" in n and "COD" in n), None)
@@ -100,10 +103,13 @@ def ler_depara(arq):
             i_d = next((i for i, n in enumerate(nomes) if ("DESC" in n or "TERMO" in n) and "TUSS" in n), None)
             if i_t is not None and i_a is not None:
                 cab = (i_a, i_t, i_d)
+                i_g = next((i for i, n in enumerate(nomes) if n.strip() == "GRUPO"), None)
             continue
         i_a, i_t, i_d = cab
         a = cod8(r[i_a]) if i_a < len(r) else None
         t = cod8(r[i_t]) if i_t < len(r) else None
+        if a and i_g is not None and i_g < len(r) and r[i_g]:
+            grupos[a] = str(r[i_g]).strip()
         if not a or not t:
             continue
         d = " ".join(str(r[i_d] or "").split()) if i_d is not None and i_d < len(r) else ""
@@ -115,12 +121,16 @@ def ler_depara(arq):
         if (p[0], p[1]) not in vistos:
             vistos.add((p[0], p[1]))
             unicos.append(p)
-    return unicos
+    return unicos, grupos
 
 
 def main():
     args = sys.argv[1:]
-    depara = None
+    depara, aba = None, None
+    if "--aba" in args:
+        i = args.index("--aba")
+        aba = args[i + 1]
+        del args[i:i + 2]
     if "--depara" in args:
         i = args.index("--depara")
         depara = args[i + 1]
@@ -134,10 +144,10 @@ def main():
             "tabelas": [{"id": t, "moeda": moeda.get(t, "R$"), "portes": portes[t], "itens": len(itens[t])}
                         for t in TABELAS]}
     if depara:
-        pares = ler_depara(depara)
+        pares, grupos = ler_depara(depara, aba)
         meta["depara"] = True
         with open(os.path.join(pasta, "depara.json"), "w", encoding="utf-8") as f:
-            json.dump({"gerado_em": hoje, "fonte": os.path.basename(depara), "pares": pares},
+            json.dump({"gerado_em": hoje, "fonte": os.path.basename(depara), "pares": pares, "grupos": grupos},
                       f, ensure_ascii=False, separators=(",", ":"))
         print("de-para:", len(pares), "pares")
     elif os.path.exists(os.path.join(pasta, "depara.json")):
