@@ -214,6 +214,8 @@ def gravar(saida_dir, regs, mud, data_base, hoje):
             origem = os.path.join(estatico, nome)
             if os.path.isfile(origem):
                 shutil.copy2(origem, os.path.join(saida_dir, nome))
+            elif os.path.isdir(origem):  # pastas inteiras (ex.: amb/ da página Cálculo AMB)
+                shutil.copytree(origem, os.path.join(saida_dir, nome), dirs_exist_ok=True)
     with open(os.path.join(saida_dir, "_headers"), "w", encoding="utf-8") as f:
         f.write("/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=1800\n")
     with open(os.path.join(saida_dir, "index.html"), "w", encoding="utf-8") as f:
